@@ -180,23 +180,17 @@ app.get('/', async (req, res) => {
                         const ctxT = document.getElementById('chartT').getContext('2d');
 
                         const timestamps = ${JSON.stringify(data.currentData.timestamps)};
-                        console.log('Timestamps:', timestamps);
-                        const labels = timestamps.map(ts => new Date(ts).toLocaleTimeString());
+                        const labels = timestamps.map(ts => new Date(ts));
+
                         const dataL = ${JSON.stringify(data.currentData.L)};
                         const dataH = ${JSON.stringify(data.currentData.H)};
                         const dataT = ${JSON.stringify(data.currentData.T)};
-                        console.log('Data L:', dataL);
-                        console.log('Data H:', dataH);
-                        console.log('Data T:', dataT);
 
                         const predictions = ${JSON.stringify(data.predictions)};
-                        const futureLabels = predictions.map(p => new Date(p.time).toLocaleTimeString());
+                        const futureLabels = predictions.map(p => new Date(p.time));
                         const futureDataL = predictions.map(p => p.predictedL);
                         const futureDataH = predictions.map(p => p.predictedH);
                         const futureDataT = predictions.map(p => p.predictedT);
-                        console.log('Future Data L:', futureDataL);
-                        console.log('Future Data H:', futureDataH);
-                        console.log('Future Data T:', futureDataT);
 
                         new Chart(ctxL, {
                             type: 'line',
@@ -216,7 +210,12 @@ app.get('/', async (req, res) => {
                                     x: {
                                         type: 'time',
                                         time: {
-                                            unit: 'minute'
+                                            unit: 'hour',
+                                            tooltipFormat: 'MMM dd, hh:mm a'
+                                        },
+                                        title: {
+                                            display: true,
+                                            text: 'Time'
                                         }
                                     }
                                 }
@@ -241,7 +240,12 @@ app.get('/', async (req, res) => {
                                     x: {
                                         type: 'time',
                                         time: {
-                                            unit: 'minute'
+                                            unit: 'hour',
+                                            tooltipFormat: 'MMM dd, hh:mm a'
+                                        },
+                                        title: {
+                                            display: true,
+                                            text: 'Time'
                                         }
                                     }
                                 }
@@ -266,11 +270,16 @@ app.get('/', async (req, res) => {
                                     x: {
                                         type: 'time',
                                         time: {
-                                            unit: 'minute'
+                                            unit: 'hour',
+                                            tooltipFormat: 'MMM dd, hh:mm a'
+                                        },
+                                        title: {
+                                            display: true,
+                                            text: 'Time'
                                         }
                                     }
                                 }
-                            }-
+                            }
                         });
                     </script>
                 </body>
