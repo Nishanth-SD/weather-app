@@ -270,7 +270,7 @@ app.get('/', async (req, res) => {
                                         }
                                     }
                                 }
-                            }
+                            }-
                         });
                     </script>
                 </body>
