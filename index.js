@@ -1,5 +1,6 @@
 const express = require('express');
 const { MongoClient } = require('mongodb');
+const regression = require('regression'); // Linear regression library
 
 const app = express();
 const port = 3000;
@@ -26,37 +27,52 @@ async function fetchAndAnalyzeData() {
         const records = await collection.find().sort({ timestamp: -1 }).limit(200).toArray();
 
         if (records.length === 0) {
+            console.log('No records found');
             return null;
         }
 
-        // Calculate averages and most frequent rain value
-        let totalL = 0, totalH = 0, totalT = 0;
-        const rainFrequency = {};
-        
+        // Prepare data for regression
+        const dataL = [];
+        const dataH = [];
+        const dataT = [];
+        const timestamps = [];
+        let currentTime = 0;
+
         records.forEach(record => {
-            totalL += parseFloat(record.L);
-            totalH += parseFloat(record.H);
-            totalT += parseFloat(record.T);
-            
-            const rainValue = record.R;
-            if (rainFrequency[rainValue]) {
-                rainFrequency[rainValue]++;
-            } else {
-                rainFrequency[rainValue] = 1;
-            }
+            const timestamp = new Date(record.timestamp).getTime();
+            timestamps.push(timestamp);
+            dataL.push([timestamp, parseFloat(record.L)]);
+            dataH.push([timestamp, parseFloat(record.H)]);
+            dataT.push([timestamp, parseFloat(record.T)]);
+            currentTime = timestamp;
         });
 
-        const averageL = totalL / records.length;
-        const averageH = totalH / records.length;
-        const averageT = totalT / records.length;
-        
-        const mostFrequentRain = Object.keys(rainFrequency).reduce((a, b) => rainFrequency[a] > rainFrequency[b] ? a : b);
+        // Perform linear regression
+        const resultL = regression.linear(dataL);
+        const resultH = regression.linear(dataH);
+        const resultT = regression.linear(dataT);
+
+        // Predict for the next 3 hours (in milliseconds)
+        const oneHour = 3600000;
+        const predictions = [];
+        for (let i = 1; i <= 3; i++) {
+            const futureTime = currentTime + i * oneHour;
+            predictions.push({
+                time: futureTime,
+                predictedL: resultL.predict(futureTime)[1],
+                predictedH: resultH.predict(futureTime)[1],
+                predictedT: resultT.predict(futureTime)[1]
+            });
+        }
 
         return {
-            averageL: averageL.toFixed(2),
-            averageH: averageH.toFixed(2),
-            averageT: averageT.toFixed(2),
-            mostFrequentRain
+            predictions,
+            currentData: {
+                timestamps,
+                L: dataL.map(d => d[1]),
+                H: dataH.map(d => d[1]),
+                T: dataT.map(d => d[1])
+            }
         };
 
     } catch (error) {
@@ -71,70 +87,192 @@ app.get('/', async (req, res) => {
     const data = await fetchAndAnalyzeData();
     
     if (data) {
-        // Determine weather condition based on LDR value
-        let weatherCondition;
-        if (data.averageL < 500) {
-            weatherCondition = 'Sunny';
-        } else {
-            weatherCondition = 'Cloudy';
-        }
-
+        console.log('Data retrieved successfully');
         res.send(`
             <html>
                 <head>
                     <title>Weather Data Analysis</title>
+                    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+                    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+                    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
                     <style>
                         body {
-                            font-family: Arial, sans-serif;
+                            font-family: 'Roboto', sans-serif;
                             margin: 0;
-                            padding: 20px;
-                            background-color: #f4f4f9;
+                            padding: 0;
+                            background-color: #f0f2f5;
                         }
                         .container {
-                            max-width: 800px;
-                            margin: 0 auto;
-                            background: #fff;
-                            padding: 20px;
-                            border-radius: 8px;
-                            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                            max-width: 900px;
+                            margin: 50px auto;
+                            background: #ffffff;
+                            padding: 30px;
+                            border-radius: 10px;
+                            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
                         }
                         h1 {
                             text-align: center;
                             color: #333;
+                            margin-bottom: 30px;
                         }
-                        .section {
+                        .card {
+                            background: #ffffff;
+                            border-radius: 8px;
+                            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+                            padding: 20px;
                             margin-bottom: 20px;
                         }
-                        .section p {
-                            margin: 5px 0;
-                            font-size: 18px;
-                        }
-                        .section .title {
-                            font-weight: bold;
+                        .card .title {
+                            font-weight: 500;
                             margin-bottom: 10px;
-                            font-size: 20px;
+                            font-size: 18px;
                             color: #007bff;
+                        }
+                        .card p {
+                            margin: 5px 0;
+                            font-size: 16px;
+                            color: #555;
+                        }
+                        canvas {
+                            display: block;
+                            margin: 20px auto;
                         }
                     </style>
                 </head>
                 <body>
                     <div class="container">
                         <h1>Weather Data Analysis</h1>
-                        <div class="section">
+                        <div class="card">
                             <div class="title">Location Information</div>
                             <p><strong>City:</strong> ${location.city}</p>
                             <p><strong>Latitude:</strong> ${location.lat}</p>
                             <p><strong>Longitude:</strong> ${location.lon}</p>
                         </div>
-                        <div class="section">
-                            <div class="title">Most Probable Weather now</div>
-                            <p><strong>Light Intensity (L):</strong> ${data.averageL}</p>
-                            <p><strong>Humidity (H):</strong> ${data.averageH}%</p>
-                            <p><strong>Average Temperature (T):</strong> ${data.averageT}°C</p>
-                            <p><strong>Rain Status (R):</strong> ${data.mostFrequentRain}</p>
-                            <p><strong>Weather Condition:</strong> ${weatherCondition}</p>
+                        <div class="card">
+                            <div class="title">Current and Predicted Weather Data</div>
+                            <p><strong>Current Data:</strong></p>
+                            <p><strong>Light Intensity (L):</strong> ${data.currentData.L[data.currentData.L.length - 1]}</p>
+                            <p><strong>Humidity (H):</strong> ${data.currentData.H[data.currentData.H.length - 1]}%</p>
+                            <p><strong>Temperature (T):</strong> ${data.currentData.T[data.currentData.T.length - 1]}°C</p>
+                            <p><strong>Predictions for the next 3 hours:</strong></p>
+                            ${data.predictions.map(prediction => `
+                                <p>
+                                    <strong>Time:</strong> ${new Date(prediction.time).toLocaleTimeString()} <br>
+                                    <strong>Predicted Light Intensity (L):</strong> ${prediction.predictedL.toFixed(2)} <br>
+                                    <strong>Predicted Humidity (H):</strong> ${prediction.predictedH.toFixed(2)}% <br>
+                                    <strong>Predicted Temperature (T):</strong> ${prediction.predictedT.toFixed(2)}°C
+                                </p>
+                            `).join('')}
+                        </div>
+                        <div class="card">
+                            <canvas id="chartL" width="400" height="200"></canvas>
+                        </div>
+                        <div class="card">
+                            <canvas id="chartH" width="400" height="200"></canvas>
+                        </div>
+                        <div class="card">
+                            <canvas id="chartT" width="400" height="200"></canvas>
                         </div>
                     </div>
+                    <script>
+                        const ctxL = document.getElementById('chartL').getContext('2d');
+                        const ctxH = document.getElementById('chartH').getContext('2d');
+                        const ctxT = document.getElementById('chartT').getContext('2d');
+
+                        const timestamps = ${JSON.stringify(data.currentData.timestamps)};
+                        console.log('Timestamps:', timestamps);
+                        const labels = timestamps.map(ts => new Date(ts).toLocaleTimeString());
+                        const dataL = ${JSON.stringify(data.currentData.L)};
+                        const dataH = ${JSON.stringify(data.currentData.H)};
+                        const dataT = ${JSON.stringify(data.currentData.T)};
+                        console.log('Data L:', dataL);
+                        console.log('Data H:', dataH);
+                        console.log('Data T:', dataT);
+
+                        const predictions = ${JSON.stringify(data.predictions)};
+                        const futureLabels = predictions.map(p => new Date(p.time).toLocaleTimeString());
+                        const futureDataL = predictions.map(p => p.predictedL);
+                        const futureDataH = predictions.map(p => p.predictedH);
+                        const futureDataT = predictions.map(p => p.predictedT);
+                        console.log('Future Data L:', futureDataL);
+                        console.log('Future Data H:', futureDataH);
+                        console.log('Future Data T:', futureDataT);
+
+                        new Chart(ctxL, {
+                            type: 'line',
+                            data: {
+                                labels: [...labels, ...futureLabels],
+                                datasets: [{
+                                    label: 'Light Intensity (L)',
+                                    data: [...dataL, ...futureDataL],
+                                    borderColor: 'rgba(255, 99, 132, 1)',
+                                    borderWidth: 2,
+                                    fill: false,
+                                    tension: 0.1
+                                }]
+                            },
+                            options: {
+                                scales: {
+                                    x: {
+                                        type: 'time',
+                                        time: {
+                                            unit: 'minute'
+                                        }
+                                    }
+                                }
+                            }
+                        });
+
+                        new Chart(ctxH, {
+                            type: 'line',
+                            data: {
+                                labels: [...labels, ...futureLabels],
+                                datasets: [{
+                                    label: 'Humidity (H)',
+                                    data: [...dataH, ...futureDataH],
+                                    borderColor: 'rgba(54, 162, 235, 1)',
+                                    borderWidth: 2,
+                                    fill: false,
+                                    tension: 0.1
+                                }]
+                            },
+                            options: {
+                                scales: {
+                                    x: {
+                                        type: 'time',
+                                        time: {
+                                            unit: 'minute'
+                                        }
+                                    }
+                                }
+                            }
+                        });
+
+                        new Chart(ctxT, {
+                            type: 'line',
+                            data: {
+                                labels: [...labels, ...futureLabels],
+                                datasets: [{
+                                    label: 'Temperature (T)',
+                                    data: [...dataT, ...futureDataT],
+                                    borderColor: 'rgba(75, 192, 192, 1)',
+                                    borderWidth: 2,
+                                    fill: false,
+                                    tension: 0.1
+                                }]
+                            },
+                            options: {
+                                scales: {
+                                    x: {
+                                        type: 'time',
+                                        time: {
+                                            unit: 'minute'
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    </script>
                 </body>
             </html>
         `);
